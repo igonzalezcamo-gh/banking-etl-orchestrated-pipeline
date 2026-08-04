@@ -1,0 +1,14 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+crash.log
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Datos
+data/raw/*.csv
