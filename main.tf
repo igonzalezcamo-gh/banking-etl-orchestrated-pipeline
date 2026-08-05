@@ -139,3 +139,59 @@ resource "aws_glue_job" "transform_job" {
     "--job-language"  = "python"
   }
 }
+
+# --- IAM role for Step Functions ---
+resource "aws_iam_role" "step_functions_role" {
+  name = "${var.project_name}-stepfunctions-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Permissions: allow Step Functions to start/monitor Glue crawlers and jobs
+resource "aws_iam_role_policy" "step_functions_glue_access" {
+  name = "${var.project_name}-stepfunctions-glue-access"
+  role = aws_iam_role.step_functions_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:StartCrawler",
+          "glue:GetCrawler",
+          "glue:StartJobRun",
+          "glue:GetJobRun",
+          "glue:GetJobRuns",
+          "glue:BatchStopJobRun",
+          "events:PutTargets",
+          "events:PutRule",
+          "events:DescribeRule"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_sfn_state_machine" "pipeline" {
+  name     = "${var.project_name}-pipeline"
+  role_arn = aws_iam_role.step_functions_role.arn
+
+  definition = templatefile("${path.module}/step_functions/pipeline.asl.json", {
+    raw_crawler_name     = aws_glue_crawler.raw_crawler.name
+    curated_crawler_name = aws_glue_crawler.curated_crawler.name
+    glue_job_name        = aws_glue_job.transform_job.name
+  })
+}

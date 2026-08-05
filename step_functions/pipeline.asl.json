@@ -1,0 +1,71 @@
+{
+  "Comment": "Orchestrates the banking ETL pipeline: raw crawler -> Glue job -> curated crawler",
+  "StartAt": "StartRawCrawler",
+  "States": {
+    "StartRawCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Parameters": { "Name": "${raw_crawler_name}" },
+      "Next": "WaitForRawCrawler",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed" }]
+    },
+    "WaitForRawCrawler": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "GetRawCrawlerStatus"
+    },
+    "GetRawCrawlerStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Parameters": { "Name": "${raw_crawler_name}" },
+      "Next": "IsRawCrawlerDone",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed" }]
+    },
+    "IsRawCrawlerDone": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.Crawler.State", "StringEquals": "READY", "Next": "RunGlueJob" }
+      ],
+      "Default": "WaitForRawCrawler"
+    },
+    "RunGlueJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": { "JobName": "${glue_job_name}" },
+      "Next": "StartCuratedCrawler",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed" }]
+    },
+    "StartCuratedCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Parameters": { "Name": "${curated_crawler_name}" },
+      "Next": "WaitForCuratedCrawler",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed" }]
+    },
+    "WaitForCuratedCrawler": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "GetCuratedCrawlerStatus"
+    },
+    "GetCuratedCrawlerStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Parameters": { "Name": "${curated_crawler_name}" },
+      "Next": "IsCuratedCrawlerDone",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed" }]
+    },
+    "IsCuratedCrawlerDone": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.Crawler.State", "StringEquals": "READY", "Next": "PipelineSucceeded" }
+      ],
+      "Default": "WaitForCuratedCrawler"
+    },
+    "PipelineSucceeded": { "Type": "Succeed" },
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "PipelineExecutionFailed",
+      "Cause": "One of the pipeline steps failed. Check CloudWatch Logs for details."
+    }
+  }
+}
