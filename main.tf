@@ -69,3 +69,73 @@ resource "aws_iam_role_policy" "glue_s3_access" {
     ]
   })
 }
+
+# --- Glue Catalog Database ---
+resource "aws_glue_catalog_database" "banking_db" {
+  name = var.glue_database_name
+}
+
+# --- Crawler: raw zone ---
+resource "aws_glue_crawler" "raw_crawler" {
+  name          = "${var.project_name}-raw-crawler"
+  role          = aws_iam_role.glue_role.arn
+  database_name = aws_glue_catalog_database.banking_db.name
+  table_prefix  = "raw_"
+
+  s3_target {
+    path = "s3://${aws_s3_bucket.data_lake.id}/raw/paysim/"
+  }
+
+  schema_change_policy {
+    delete_behavior = "LOG"
+    update_behavior  = "UPDATE_IN_DATABASE"
+  }
+}
+
+# --- Crawler: curated zone ---
+resource "aws_glue_crawler" "curated_crawler" {
+  name          = "${var.project_name}-curated-crawler"
+  role          = aws_iam_role.glue_role.arn
+  database_name = aws_glue_catalog_database.banking_db.name
+  table_prefix  = "curated_"
+
+  s3_target {
+    path = "s3://${aws_s3_bucket.data_lake.id}/curated/paysim/"
+  }
+
+  schema_change_policy {
+    delete_behavior = "LOG"
+    update_behavior  = "UPDATE_IN_DATABASE"
+  }
+}
+
+# --- Upload the PySpark script to S3 ---
+resource "aws_s3_object" "glue_script" {
+  bucket = aws_s3_bucket.data_lake.id
+  key    = "scripts/transform_transactions.py"
+  source = "${path.module}/glue_jobs/transform_transactions.py"
+  etag   = filemd5("${path.module}/glue_jobs/transform_transactions.py")
+}
+
+# --- Glue Job ---
+resource "aws_glue_job" "transform_job" {
+  name     = "${var.project_name}-transform-job"
+  role_arn = aws_iam_role.glue_role.arn
+
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
+  number_of_workers = 2
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.data_lake.id}/${aws_s3_object.glue_script.key}"
+    python_version  = "3"
+  }
+
+  default_arguments = {
+    "--database_name" = aws_glue_catalog_database.banking_db.name
+    "--table_name"    = "raw_paysim"
+    "--output_path"   = "s3://${aws_s3_bucket.data_lake.id}/curated/paysim/"
+    "--job-language"  = "python"
+  }
+}
