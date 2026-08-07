@@ -233,7 +233,7 @@ resource "aws_iam_role_policy" "eventbridge_start_execution" {
 # --- Scheduling rule: runs daily at 3 AM UTC ---
 resource "aws_cloudwatch_event_rule" "daily_schedule" {
   name                = "${var.project_name}-daily-trigger"
-  description         = "Triggers the banking ETL pipeline every day at 6 AM UTC"
+  description         = "Triggers the banking ETL pipeline every day at 3 AM UTC"
   schedule_expression = "cron(0 3 * * ? *)"
 }
 
@@ -241,4 +241,33 @@ resource "aws_cloudwatch_event_target" "pipeline_target" {
   rule     = aws_cloudwatch_event_rule.daily_schedule.name
   arn      = aws_sfn_state_machine.pipeline.arn
   role_arn = aws_iam_role.eventbridge_role.arn
+}
+
+# --- SNS topic for pipeline failure notifications ---
+resource "aws_sns_topic" "pipeline_alerts" {
+  name = "${var.project_name}-pipeline-alerts"
+}
+
+resource "aws_sns_topic_subscription" "email_alert" {
+  topic_arn = aws_sns_topic.pipeline_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# --- CloudWatch alarm: triggers if the state machine execution fails ---
+resource "aws_cloudwatch_metric_alarm" "pipeline_failure" {
+  alarm_name          = "${var.project_name}-pipeline-failure"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ExecutionsFailed"
+  namespace           = "AWS/States"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  alarm_description   = "Alarm when the banking ETL pipeline execution fails"
+  alarm_actions       = [aws_sns_topic.pipeline_alerts.arn]
+
+  dimensions = {
+    StateMachineArn = aws_sfn_state_machine.pipeline.arn
+  }
 }

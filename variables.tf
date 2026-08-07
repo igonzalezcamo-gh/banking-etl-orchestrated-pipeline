@@ -21,3 +21,8 @@ variable "project_name" {
   type        = string
   default     = "banking-etl-orchestrated"
 }
+
+variable "alert_email" {
+  description = "Email address to receive pipeline failure alerts"
+  type        = string
+}
