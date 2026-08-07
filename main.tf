@@ -195,3 +195,50 @@ resource "aws_sfn_state_machine" "pipeline" {
     glue_job_name        = aws_glue_job.transform_job.name
   })
 }
+
+# --- IAM role for EventBridge to trigger Step Functions ---
+resource "aws_iam_role" "eventbridge_role" {
+  name = "${var.project_name}-eventbridge-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "eventbridge_start_execution" {
+  name = "${var.project_name}-eventbridge-start-execution"
+  role = aws_iam_role.eventbridge_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "states:StartExecution"
+        Resource = aws_sfn_state_machine.pipeline.arn
+      }
+    ]
+  })
+}
+
+# --- Scheduling rule: runs daily at 3 AM UTC ---
+resource "aws_cloudwatch_event_rule" "daily_schedule" {
+  name                = "${var.project_name}-daily-trigger"
+  description         = "Triggers the banking ETL pipeline every day at 6 AM UTC"
+  schedule_expression = "cron(0 3 * * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "pipeline_target" {
+  rule     = aws_cloudwatch_event_rule.daily_schedule.name
+  arn      = aws_sfn_state_machine.pipeline.arn
+  role_arn = aws_iam_role.eventbridge_role.arn
+}
