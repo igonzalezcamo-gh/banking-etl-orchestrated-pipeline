@@ -88,7 +88,7 @@ resource "aws_glue_crawler" "raw_crawler" {
 
   schema_change_policy {
     delete_behavior = "LOG"
-    update_behavior  = "UPDATE_IN_DATABASE"
+    update_behavior = "UPDATE_IN_DATABASE"
   }
 }
 
@@ -105,7 +105,7 @@ resource "aws_glue_crawler" "curated_crawler" {
 
   schema_change_policy {
     delete_behavior = "LOG"
-    update_behavior  = "UPDATE_IN_DATABASE"
+    update_behavior = "UPDATE_IN_DATABASE"
   }
 }
 
